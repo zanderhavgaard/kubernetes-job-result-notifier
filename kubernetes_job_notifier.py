@@ -1,13 +1,17 @@
+"""
+Send slack messages when Kubernetes Jobs finish.
+"""
+
 from time import sleep, time
 from datetime import datetime
 from kubernetes import config
 from kubernetes.client import BatchV1Api
 from loguru import logger
-from dynaconf import Dynaconf, Validator
+from dynaconf import Dynaconf
 from slack_sdk import WebhookClient
 
 
-def send_slack_message_job_failed(
+def _send_slack_message_job_failed(
     webhook_url: str,
     slack_users_to_notify: list[str],
     namespace: str,
@@ -27,7 +31,7 @@ def send_slack_message_job_failed(
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"Job failed! :rotating_light:",
+                "text": "Job failed! :rotating_light:",
             },
         },
         {
@@ -66,9 +70,8 @@ def send_slack_message_job_failed(
         logger.info(f"Successfully sent slack message for job: {job_name}.")
 
 
-def send_slack_message_job_succeeded(
+def _send_slack_message_job_succeeded(
     webhook_url: str,
-    slack_users_to_notify: list[str],
     namespace: str,
     job_name: str,
     job_creation_timestamp: datetime,
@@ -86,7 +89,7 @@ def send_slack_message_job_succeeded(
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"Job Completed Successfully :white_check_mark:",
+                "text": "Job Completed Successfully :white_check_mark:",
             },
         },
         {
@@ -126,7 +129,7 @@ def send_slack_message_job_succeeded(
         logger.info(f"Successfully sent slack message for job: {job_name}.")
 
 
-def create_kubernetes_api_client(use_kube_config: bool = False) -> BatchV1Api:
+def _create_kubernetes_api_client(use_kube_config: bool = False) -> BatchV1Api:
     if use_kube_config:
         # load local kubeconfig
         config.load_kube_config()
@@ -138,7 +141,7 @@ def create_kubernetes_api_client(use_kube_config: bool = False) -> BatchV1Api:
     return kubernetes_client
 
 
-def load_settings() -> Dynaconf:
+def _load_settings() -> Dynaconf:
     settings = Dynaconf(
         envvar_prefix=False, environments=False, load_dotenv=False, settings_files=[]
     )
@@ -147,7 +150,7 @@ def load_settings() -> Dynaconf:
     return settings
 
 
-def delete_old_job_hashes(
+def _delete_old_job_hashes(
     expiration_time_seconds: int, seen_jobs: dict[str, int]
 ) -> None:
     hashes_to_delete = []
@@ -155,17 +158,21 @@ def delete_old_job_hashes(
     for job_hash, timestamp in seen_jobs.items():
         if current_time - timestamp > expiration_time_seconds:
             hashes_to_delete.append(job_hash)
-    for hash in hashes_to_delete:
-        del seen_jobs[hash]
+    for job_hash in hashes_to_delete:
+        del seen_jobs[job_hash]
 
 
 def entrypoint() -> None:
+    # pylint: disable=too-many-locals
+    """
+    Main loop querying the Kuberntes Batch API for Job objects and sending messages based on their status.
+    """
     # dict holding unique hashes of job-name and time stamp of when the job was created,
     # the value is when the job was looked at, and we use it to delete old hashes
     seen_jobs = {}
 
     logger.info("Loading config ...")
-    settings = load_settings()
+    settings = _load_settings()
     slack_webhook_url = settings.get("SLACK_WEBHOOK_URL")
     namespace = settings.get("NAMESPACE")
     send_message_on_job_success = settings.get(
@@ -177,9 +184,6 @@ def entrypoint() -> None:
     # click on user profile in the slack ui, from the kebab menu select the "copy member id" option to get the user id
     # inject as a JSON list: 'SLACK_USERS_TO_NOTIFY='["<userid>","<userid>","<userid>"]'
     slack_users_to_notify = settings.get("SLACK_USERS_TO_NOTIFY", default=[])
-    print(slack_users_to_notify)
-    print(type(slack_users_to_notify))
-    print(type(slack_users_to_notify[0]))
     if slack_users_to_notify:
         slack_users_to_notify = [f"<@{userid}>" for userid in slack_users_to_notify]
         logger.info(f"Will notify users with userids: {slack_users_to_notify}")
@@ -192,9 +196,9 @@ def entrypoint() -> None:
         logger.info("Will use local kubeconfig for authentication.")
 
     logger.info("Creating API client ...")
-    kubernetes_client = create_kubernetes_api_client(use_kube_config=use_kube_config)
+    kubernetes_client = _create_kubernetes_api_client(use_kube_config=use_kube_config)
 
-    logger.info(f"Starting main loop ...")
+    logger.info("Starting main loop ...")
     while True:
         jobs = kubernetes_client.list_namespaced_job(namespace=namespace)
 
@@ -215,7 +219,7 @@ def entrypoint() -> None:
 
             if job_status.failed:
                 logger.info(f"Saw failed job: {job_name}, sending slack message ...")
-                send_slack_message_job_failed(
+                _send_slack_message_job_failed(
                     webhook_url=slack_webhook_url,
                     slack_users_to_notify=slack_users_to_notify,
                     job_name=job_name,
@@ -228,9 +232,8 @@ def entrypoint() -> None:
                     logger.info(
                         f"Saw completed job: {job_name}, sending slack message ..."
                     )
-                    send_slack_message_job_succeeded(
+                    _send_slack_message_job_succeeded(
                         webhook_url=slack_webhook_url,
-                        slack_users_to_notify=slack_users_to_notify,
                         job_name=job_name,
                         job_creation_timestamp=job_creation_time,
                         namespace=namespace,
@@ -243,7 +246,7 @@ def entrypoint() -> None:
         # delete old job hashes
         expiration_time_seconds = 30
         logger.info("Deleting hashes ...")
-        delete_old_job_hashes(
+        _delete_old_job_hashes(
             expiration_time_seconds=expiration_time_seconds, seen_jobs=seen_jobs
         )
 
