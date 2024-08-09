@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "k8s-job-notifier"
+name = "kubernetes-job-result-notifier"
 version = "0.1.0"
 description = "Send slack messages on Kubernetes job events"
 authors = ["zanderhavgaard <zander@havgaard.dk>"]
