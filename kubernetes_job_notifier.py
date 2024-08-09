@@ -303,19 +303,11 @@ def entrypoint() -> None:
                     logger.info(f"adding hash: {job.name_hash}")
                     seen_jobs[job.name_hash] = time()
 
-        print("---")
-        print("seen jobs")
-        print(seen_jobs)
-        print("---")
-
-        # delete old job hashes
-        expiration_time_seconds = 30
-        logger.info("Deleting hashes ...")
+        # delete seen jobs older an hour to avoid wasting memory
+        expiration_time_seconds = 3600
         _delete_old_job_hashes(
             expiration_time_seconds=expiration_time_seconds, seen_jobs=seen_jobs
         )
-
-        logger.info("sleeping ... zzzz")
 
         # sleep until next iteration
         sleep(loop_sleep_seconds)
