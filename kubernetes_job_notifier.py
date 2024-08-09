@@ -201,7 +201,8 @@ def _parse_kubernetes_jobs(
         elif job_status.failed:
             job_state = JobState.FAILED
         else:
-            raise RuntimeError(f"Could not determine job status, for job: {job.status}")
+            # job is initializing, we skip it for now
+            continue
 
         # create a unique hashable value for the job
         job_hash = f"{job_name}-{job_creation_timestamp_str}"
